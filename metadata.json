@@ -1,0 +1,5 @@
+{
+  "name": "3D Model Idea Generator",
+  "description": "An application that generates a creative idea for a 3D model and then visualizes it from four different angles using AI-powered image generation.",
+  "requestFramePermissions": []
+}
