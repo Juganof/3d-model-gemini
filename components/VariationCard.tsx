@@ -19,7 +19,7 @@ const VariationCard: React.FC<VariationCardProps> = ({ src, onSelect, isLoading,
   }
 
   return (
-    <div className={`bg-gray-700/50 rounded-lg p-2 border border-gray-600 flex flex-col gap-3 transition-all duration-200 ${!isDisabled ? 'hover:scale-105 hover:border-purple-500' : ''}`}>
+    <div className={`bg-gray-700/50 rounded-lg p-2 border border-gray-600 flex flex-col gap-3 transition-all duration-200 w-60 flex-shrink-0 ${!isDisabled ? 'hover:scale-105 hover:border-purple-500' : ''}`}>
       <div className="aspect-square bg-gray-900 rounded-md overflow-hidden">
         <img src={src} alt="Model concept" className="w-full h-full object-cover" />
       </div>

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useRef } from 'react';
 import ImageUploadSlot from './ImageUploadSlot';
 import { extractKeywordsFromImage } from '../services/geminiService';
@@ -7,19 +9,13 @@ import Spinner from './Spinner';
 interface InspirationProps {
   inspirationImage: string | null;
   onSetInspirationImage: (image: string | null) => void;
-  inspirationKeywords: string[];
-  onAddKeyword: (keyword: string) => void;
   onAddKeywords: (keywords: string[]) => void;
-  onRemoveKeyword: (keyword: string) => void;
   onExportData: () => void;
   onImportData: (file: File) => void;
+  excludedKeywords: string[];
+  onAddExcludedKeyword: (keyword: string) => void;
+  onRemoveExcludedKeyword: (keyword: string) => void;
 }
-
-const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12.548 0A48.108 48.108 0 016.25 5.397m12.15-3.007a48.09 48.09 0 01-5.69 0" />
-    </svg>
-);
 
 const WandIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
@@ -39,19 +35,25 @@ const UploadIcon: React.FC<{ className?: string }> = ({ className }) => (
     </svg>
 );
 
+const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
+
 
 const Inspiration: React.FC<InspirationProps> = ({ 
     inspirationImage, 
     onSetInspirationImage,
-    inspirationKeywords,
-    onAddKeyword,
     onAddKeywords,
-    onRemoveKeyword,
     onExportData,
-    onImportData
+    onImportData,
+    excludedKeywords,
+    onAddExcludedKeyword,
+    onRemoveExcludedKeyword,
 }) => {
-    const [newKeyword, setNewKeyword] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
+    const [newExcludedKeyword, setNewExcludedKeyword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,15 +78,6 @@ const Inspiration: React.FC<InspirationProps> = ({
         onSetInspirationImage(null);
     };
 
-    const handleAddKeywordSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const trimmedKeyword = newKeyword.trim().toLowerCase();
-        if (trimmedKeyword) {
-            onAddKeyword(trimmedKeyword);
-            setNewKeyword('');
-        }
-    };
-
     const handleExtractKeywords = async () => {
         if (!inspirationImage) return;
 
@@ -99,18 +92,23 @@ const Inspiration: React.FC<InspirationProps> = ({
             setIsExtracting(false);
         }
     };
+
+    const handleAddExcludedSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onAddExcludedKeyword(newExcludedKeyword);
+        setNewExcludedKeyword('');
+    };
     
     return (
         <div className="flex flex-col gap-8">
             <div className="bg-gray-800/50 p-6 rounded-xl border border-gray-700 shadow-lg">
                 <h2 className="text-3xl font-bold mb-2 text-cyan-300">Inspiration Sources</h2>
-                <p className="text-gray-400 mb-6">Manage the data sources the AI uses to generate new model ideas. You can upload a word cloud or manually add keywords.</p>
+                <p className="text-gray-400 mb-6">Manage the data sources the AI uses to generate new model ideas. You can upload a word cloud or manage a list of keywords to exclude.</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Image Inspiration */}
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-4 border-r-0 md:border-r md:border-gray-700 md:pr-8">
                         <h3 className="text-xl font-semibold text-gray-200">Image-based Inspiration</h3>
-                        <p className="text-sm text-gray-400">Upload a single image, like a word cloud of popular search terms, to give the AI visual context for new ideas.</p>
+                        <p className="text-sm text-gray-400">Upload a single image, like a word cloud of popular search terms, to give the AI visual context for new ideas. Extracted keywords will be added to the list on the Generator page.</p>
                         <div className="max-w-xs">
                              <ImageUploadSlot
                                 label="Inspiration Image"
@@ -131,37 +129,41 @@ const Inspiration: React.FC<InspirationProps> = ({
                             <p className="text-sm text-red-400 max-w-xs">{error}</p>
                         )}
                     </div>
-
-                    {/* Keyword Inspiration */}
                     <div className="flex flex-col gap-4">
-                        <h3 className="text-xl font-semibold text-gray-200">Keyword-based Inspiration</h3>
-                        <p className="text-sm text-gray-400">Add, remove, and view the list of keywords used for generating ideas. These are used in addition to any uploaded image.</p>
-                        <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700 h-64 overflow-y-auto">
-                            {inspirationKeywords.length > 0 ? (
+                        <h3 className="text-xl font-semibold text-red-300">Excluded Keywords</h3>
+                        <p className="text-sm text-gray-400">Add keywords here to strictly prevent them from appearing in generated ideas. Adding a keyword here will remove it from your main inspiration list.</p>
+                        
+                        <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700 h-36 overflow-y-auto">
+                            {excludedKeywords.length > 0 ? (
                                 <div className="flex flex-wrap gap-2">
-                                    {inspirationKeywords.sort().map(keyword => (
-                                        <span key={keyword} className="flex items-center gap-2 bg-purple-600/50 text-purple-200 text-sm font-medium px-3 py-1 rounded-full border border-purple-500">
-                                            {keyword}
-                                            <button onClick={() => onRemoveKeyword(keyword)} className="text-purple-300 hover:text-white" aria-label={`Remove ${keyword}`}>
-                                                <TrashIcon className="w-3 h-3" />
+                                    {excludedKeywords.sort().map(keyword => (
+                                        <div key={keyword} className="flex items-center gap-1.5 bg-red-900/50 text-red-200 border border-red-700/80 text-sm font-medium px-3 py-1 rounded-full">
+                                            <span>{keyword}</span>
+                                            <button 
+                                                onClick={() => onRemoveExcludedKeyword(keyword)} 
+                                                className="text-red-300 hover:text-white"
+                                                aria-label={`Remove excluded keyword: ${keyword}`}
+                                            >
+                                                <CloseIcon className="w-4 h-4" />
                                             </button>
-                                        </span>
+                                        </div>
                                     ))}
                                 </div>
                             ) : (
-                                <p className="text-gray-500 text-center mt-8">No keywords added yet.</p>
+                                <p className="text-gray-500 text-center flex items-center justify-center h-full text-sm">No keywords excluded yet.</p>
                             )}
                         </div>
-                        <form onSubmit={handleAddKeywordSubmit} className="flex gap-2">
+                        
+                        <form onSubmit={handleAddExcludedSubmit} className="flex gap-2">
                             <input
                                 type="text"
-                                value={newKeyword}
-                                onChange={(e) => setNewKeyword(e.target.value)}
-                                placeholder="Add a new keyword..."
-                                className="flex-grow bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                value={newExcludedKeyword}
+                                onChange={(e) => setNewExcludedKeyword(e.target.value)}
+                                placeholder="Exclude a keyword..."
+                                className="flex-grow bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500"
                             />
-                            <button type="submit" className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
-                                Add
+                            <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors">
+                                Exclude
                             </button>
                         </form>
                     </div>

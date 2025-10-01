@@ -1,6 +1,5 @@
 
-
-import { GoogleGenAI, Modality, Type, GenerateContentResponse, GenerateImagesResponse } from "@google/genai";
+import { GoogleGenAI, Modality, Type, GenerateContentResponse } from "@google/genai";
 import type { ModelView } from '../types';
 
 const API_KEY = process.env.API_KEY;
@@ -38,25 +37,38 @@ export async function generateModelIdeas(
   existingIdeas: string[] = [],
   inspirationKeywords: string[],
   inspirationImage: string | null = null,
-  focusedKeywords: string[] = []
+  focusedKeywords: string[] = [],
+  excludedKeywords: string[] = []
 ): Promise<string[]> {
   try {
     const parts: ({ text: string } | { inlineData: { mimeType: string; data: string } })[] = [];
 
-    let promptText = `Generate a list of 4 concise, creative ideas for 3D models.
+    let promptText = `Generate a JSON array containing exactly 4 concise, creative, and interesting ideas for 3D models.
 
-**Primary Goal:** The ideas must be for objects that are PURELY decorative, artistic, and have NO practical function. They are sculptures or abstract art pieces.
+**Primary Goal:** The ideas MUST BE purely decorative, artistic, or for entertainment. This includes sculptures, character figures, desk toys, miniatures, articulated creatures, and fan art.
 
-**--- STRICT RULE: NO FUNCTIONAL ITEMS ---**
-- **ABSOLUTELY NO** items designed to hold, store, organize, or support anything.
-- **DO NOT** generate ideas for: phone stands, headphone holders, pen pots, bowls, vases that can hold water, boxes, containers, keychains, hooks, brackets, or any kind of tool or utility item.
-- If inspiration keywords contain functional items (e.g., 'organizer', 'holder'), you **MUST** creatively misinterpret the keyword to generate a non-functional, abstract sculpture inspired by the concept.
-- **Example Transformation:** If an inspiration keyword is 'pen holder', do not create a holder for pens. Instead, you could generate "A sculpture of a cascade of melting pens" or an "Abstract 'Writer's Block' monument".
+**--- ABSOLUTE PROHIBITION on Functional Items ---**
+You MUST NOT generate any ideas that are primarily functional. This includes, but is not limited to:
+- Organizers (desk organizers, cable organizers, etc.)
+- Holders (pen holders, phone holders, headphone holders, candle holders, etc.)
+- Stands (phone stands, headphone stands, laptop stands, etc.)
+- Cases (phone cases, storage cases, etc.)
+- Mounts, brackets, hooks, or clips.
+- Vases, planters, or any kind of container whose primary purpose is to hold something.
+- Tools or functional parts.
 
+Any idea whose description includes words like "organizer", "holder", "stand", "case", "mount", "hook", "clip", "tray", "box", or "container" is STRICTLY FORBIDDEN. The focus must be 100% on artistic and non-functional models. A "dragon sculpture" is good. A "dragon phone holder" is bad.
+`;
+
+    if (excludedKeywords.length > 0) {
+        promptText += `\n**--- STRICTLY EXCLUDED KEYWORDS ---**\nYou MUST NOT generate any ideas containing or related to the following keywords: ${JSON.stringify(excludedKeywords)}\n`;
+    }
+
+    promptText += `
 **Printability:** The models must be suitable for FDM/FDD 3D printing (no floating/thin parts, minimal supports).
 
 **Crucial Instructions:**
-1.  **Thematic Diversity:** Ensure the 4 ideas are thematically diverse. For example, try to include a mix of categories like characters, abstract art, nature, and technology. Do not generate four ideas from the same category (e.g., four different dragons).
+1.  **Thematic Diversity:** Ensure the 4 ideas are thematically diverse. For example, try to include a mix of categories like desk toys, characters, fan art, and abstract pieces. Do not generate four ideas from the same category (e.g., four different dragons).
 2.  **Avoid Repetition:** Do not generate any of the following ideas that have already been suggested in this session:
     ${JSON.stringify(existingIdeas)}
 `;
@@ -81,7 +93,7 @@ export async function generateModelIdeas(
     }
 
 
-    promptText += "\n\nRespond with ONLY a JSON array of 4 unique strings.";
+    promptText += "\n\nRespond with ONLY a JSON array containing exactly 4 unique strings.";
 
     // The text part must be last when sending an image
     parts.push({ text: promptText });
@@ -93,9 +105,10 @@ export async function generateModelIdeas(
             responseMimeType: "application/json",
             responseSchema: {
                 type: Type.ARRAY,
+                description: "An array containing exactly 4 unique, non-functional, 3D model ideas.",
                 items: {
                     type: Type.STRING,
-                    description: 'A single non-functional, decorative 3D model idea.'
+                    description: 'A single creative, interesting, NON-FUNCTIONAL 3D model idea.'
                 }
             }
         }
@@ -111,6 +124,51 @@ export async function generateModelIdeas(
     console.error("Error generating model ideas:", error);
     throw new Error("Failed to generate model ideas. The model might be temporarily unavailable. Please try again later.");
   }
+}
+
+export async function extractKeywordsFromIdeas(ideas: string[]): Promise<string[]> {
+    try {
+        const prompt = `Analyze the following list of 4 3D model ideas. For each idea, extract 1-3 of the most important and descriptive keywords that capture the essence of the model.
+
+**Ideas:**
+${JSON.stringify(ideas)}
+
+**Instructions:**
+- Focus on nouns and descriptive adjectives.
+- Keywords should be lowercase.
+- Combine all keywords from all ideas into a single list.
+- The final list must contain only unique keywords. Do not include duplicates.
+
+**Example:**
+If the input is ["A stylized, low-poly fox statue for a desk", "An articulated robot action figure"], the output should be ["stylized", "low-poly", "fox", "statue", "desk", "articulated", "robot", "action figure"].
+
+Respond with ONLY a JSON array of unique strings.`;
+
+        const response = await retryWithBackoff<GenerateContentResponse>(() => ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [{ text: prompt }] },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.STRING,
+                        description: 'A single, unique, lowercase keyword extracted from the ideas.'
+                    }
+                }
+            }
+        }));
+
+        const keywords = JSON.parse(response.text);
+        if (!Array.isArray(keywords)) {
+            throw new Error("Invalid response format from AI model. Expected a JSON array of strings.");
+        }
+        return keywords.map(kw => kw.toLowerCase().trim()).filter(Boolean);
+
+    } catch (error) {
+        console.error("Error extracting keywords from ideas:", error);
+        throw new Error("Failed to extract keywords from the generated ideas. The model might be temporarily unavailable. Please try again.");
+    }
 }
 
 export async function extractKeywordsFromImage(imageDataUrl: string): Promise<string[]> {
@@ -148,7 +206,7 @@ export async function extractKeywordsFromImage(imageDataUrl: string): Promise<st
 
 export function getFrontViewPrompt(idea: string): string {
   return `**Subject:** A 3D model of a "${idea}".
-**Purpose:** The model is a non-functional, decorative art piece.
+**Purpose:** To showcase a 3D printable model.
 **Style:** Photorealistic render, clay model style.
 **Color:** Single, solid, matte grey color.
 **Background:** Solid, pure white, seamless background.
@@ -161,27 +219,46 @@ export function getFrontViewPrompt(idea: string): string {
 
 export async function generateFrontViewVariations(idea: string): Promise<string[]> {
     try {
-      const frontPrompt = getFrontViewPrompt(idea);
-      
-      const imagenResponse = await retryWithBackoff<GenerateImagesResponse>(() => ai.models.generateImages({
-          model: 'imagen-4.0-generate-001',
-          prompt: frontPrompt,
-          config: {
-              numberOfImages: 4,
-              outputMimeType: 'image/png',
-              aspectRatio: '1:1',
-          },
-      }));
-  
-      if (!imagenResponse.generatedImages || imagenResponse.generatedImages.length === 0) {
-          throw new Error("Failed to generate any front view variations.");
-      }
-  
-      return imagenResponse.generatedImages.map(img => `data:image/png;base64,${img.image.imageBytes}`);
-  
+        const frontPrompt = getFrontViewPrompt(idea);
+
+        const generateSingleVariation = (): Promise<GenerateContentResponse> => {
+            return retryWithBackoff<GenerateContentResponse>(() => ai.models.generateContent({
+                model: 'gemini-2.5-flash-image-preview',
+                contents: {
+                    parts: [ { text: frontPrompt } ],
+                },
+                config: {
+                    responseModalities: [Modality.IMAGE, Modality.TEXT],
+                },
+            }));
+        };
+
+        const variationPromises = [
+            generateSingleVariation(),
+            generateSingleVariation(),
+            generateSingleVariation(),
+            generateSingleVariation(),
+        ];
+
+        const responses = await Promise.all(variationPromises);
+
+        const variations = responses.map(response => {
+            const imagePart = response.candidates?.[0]?.content?.parts.find(p => p.inlineData);
+            if (imagePart?.inlineData) {
+                return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+            }
+            throw new Error(`A front view variation could not be generated from the model's response.`);
+        });
+
+        if (variations.length < 4) {
+            throw new Error("Failed to generate all 4 front view variations.");
+        }
+
+        return variations;
+
     } catch (error) {
-      console.error("Error generating front view variations:", error);
-      throw new Error("Failed to generate front view variations. The model might be temporarily unavailable. Please try again later.");
+        console.error("Error generating front view variations:", error);
+        throw new Error("Failed to generate front view variations. The model might be temporarily unavailable. Please try again later.");
     }
 }
 
@@ -210,7 +287,7 @@ export async function generateOtherViews(
                     viewSpecificInstruction = `Generate the ${view} view of the model.`;
             }
 
-            const editPrompt = `This is the front view of a single-color, non-functional, decorative 3D model on a solid white background. ${viewSpecificInstruction} Maintain the exact same single-color, clay-render style and the solid white background. The model must also be suitable for FDM/FDD printing: no floating parts, no thin delicate parts, and designed for minimal support. The output image must ONLY contain the 3D model object and nothing else.`;
+            const editPrompt = `This is the front view of a single-color 3D model on a solid white background. ${viewSpecificInstruction} Maintain the exact same single-color, clay-render style and the solid white background. The model must also be suitable for FDM/FDD printing: no floating parts, no thin delicate parts, and designed for minimal support. The output image must ONLY contain the 3D model object and nothing else.`;
             
             const nanoResponse = await retryWithBackoff<GenerateContentResponse>(() => ai.models.generateContent({
                 model: 'gemini-2.5-flash-image-preview',
